@@ -333,8 +333,10 @@ function drawProgressBar(ctx: CanvasRenderingContext2D, state: AppState, current
   ctx.fillStyle = state.textColor;
   ctx.fillRect(x, y, w * Math.max(0, Math.min(1, playedFraction)), h);
 
+  // Solid theme color (not the dimmed label opacity, and not tied to a
+  // customized bar color) — reads as part of the bar, not a faint caption.
   ctx.font = LABEL_FONT;
-  ctx.fillStyle = hexToRgba(state.textColor, LABEL_OPACITY);
+  ctx.fillStyle = state.textColor;
   ctx.textBaseline = 'alphabetic';
 
   ctx.textAlign = 'left';
