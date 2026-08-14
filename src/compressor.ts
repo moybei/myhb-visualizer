@@ -22,7 +22,30 @@ const COMPRESS_PRESET = 'veryfast';
 
 export type CompressPhase = 'downloading-engine' | 'encoding';
 
+// ~30MB should never legitimately take anywhere near this long on any real
+// connection — if the engine hasn't loaded within this window, something is
+// genuinely stuck (stalled fetch, worker failed silently), not just slow.
+// Encoding itself (which can legitimately take minutes for a full song) isn't
+// bound by this — only the engine download/init step is.
+const ENGINE_LOAD_TIMEOUT_MS = 90_000;
+
 let ffmpegPromise: Promise<FFmpeg> | null = null;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
 
 /**
  * Fetches a URL with byte-level progress via the response stream, then
@@ -88,7 +111,11 @@ export async function compressVideo(
   sourceMimeType: string,
   onProgress: (phase: CompressPhase, fraction: number) => void
 ): Promise<Blob> {
-  const ffmpeg = await getFFmpeg(onProgress);
+  const ffmpeg = await withTimeout(
+    getFFmpeg(onProgress),
+    ENGINE_LOAD_TIMEOUT_MS,
+    `Compression engine failed to load within ${ENGINE_LOAD_TIMEOUT_MS / 1000}s`
+  );
   const inputName = `input.${sourceMimeType.includes('mp4') ? 'mp4' : 'webm'}`;
   const outputName = 'output.mp4';
 
@@ -111,6 +138,16 @@ export async function compressVideo(
       String(COMPRESS_CRF),
       '-preset',
       COMPRESS_PRESET,
+      // The live capture's real-time timestamps can jitter slightly (never
+      // exactly 60.000fps every frame), and without an explicit output rate
+      // ffmpeg falls back to inferring one from that timing — which came out
+      // as 30fps. -r forces the true target rate; -vsync cfr converts the
+      // variable-timestamp input into a strict constant frame rate by
+      // duplicating/dropping frames as needed instead of just relabeling it.
+      '-r',
+      '60',
+      '-vsync',
+      'cfr',
       '-pix_fmt',
       'yuv420p',
       '-c:a',

@@ -18,6 +18,30 @@ const MIME_TYPE_CANDIDATES = [
 // delivered size comes from the CRF compress step, not this number.
 const VIDEO_BITS_PER_SECOND = 30_000_000;
 
+/**
+ * Compression runs fully single-threaded (no cross-origin isolation on
+ * GitHub Pages) and can legitimately take a long time for a full-length song
+ * — but with no bound at all, a genuine stall (worker crash, stuck fetch)
+ * would leave the progress bar frozen forever with no feedback. This caps it
+ * at whichever is larger: 5 minutes, or 6x the recorded duration — generous
+ * enough not to cut off a real slow-but-working encode.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timed out after ${Math.round(ms / 1000)}s`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 export function pickSupportedMimeType(): string | null {
   if (typeof MediaRecorder === 'undefined') return null;
   for (const candidate of MIME_TYPE_CANDIDATES) {
@@ -74,17 +98,26 @@ export async function startExport(
   const rawBlob = await recordRange(canvas, audioEngine, audioElement, range, mimeType, callbacks);
   if (!rawBlob) return; // error already reported by recordRange
 
+  const effectiveEndSec = range.endSec ?? (audioElement.duration || 0);
+  const recordedDurationSec = Math.max(0, effectiveEndSec - range.startSec);
+  const compressTimeoutMs = Math.max(5 * 60_000, recordedDurationSec * 1000 * 6);
+
   callbacks.onProgress?.('Downloading compression engine…', 0);
   try {
-    const compressed = await compressVideo(rawBlob, mimeType, (phase, fraction) => {
-      const message = phase === 'downloading-engine' ? 'Downloading compression engine…' : 'Compressing…';
-      callbacks.onProgress?.(message, fraction);
-    });
+    const compressed = await withTimeout(
+      compressVideo(rawBlob, mimeType, (phase, fraction) => {
+        const message = phase === 'downloading-engine' ? 'Downloading compression engine…' : 'Compressing…';
+        callbacks.onProgress?.(message, fraction);
+      }),
+      compressTimeoutMs
+    );
     const blobUrl = URL.createObjectURL(compressed);
     callbacks.onComplete?.({ blobUrl, fileExtension: 'mp4' });
-  } catch {
-    // Compression is a bonus step — if it fails for any reason, still hand
-    // back the (larger, uncompressed) recording rather than losing the render.
+  } catch (err) {
+    // Compression is a bonus step — if it fails or times out for any reason,
+    // still hand back the (larger, uncompressed) recording rather than
+    // leaving the render stuck or losing it entirely.
+    console.error('Video compression failed or timed out, falling back to the uncompressed recording:', err);
     const blobUrl = URL.createObjectURL(rawBlob);
     const fileExtension = mimeType.includes('mp4') ? 'mp4' : 'webm';
     callbacks.onProgress?.('Compression failed — using the uncompressed recording instead.', 1);
