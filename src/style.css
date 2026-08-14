@@ -20,24 +20,67 @@ html, body {
 
 .stage-wrap {
   flex: 1 1 640px;
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+/* Takes all the leftover vertical space above the bottom bar, and centers the
+   canvas within whatever that ends up being — so growing/shrinking the
+   bottom bar never overlaps the canvas, it just resizes the canvas's box. */
+.stage-canvas-area {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+/* Classic replaced-element fit: width/height auto + max-width/max-height lets
+   the canvas shrink-to-fit both constraints while preserving its intrinsic
+   1920x1080 ratio (same technique as a plain <img>) — the border/background
+   box hugs the actual content tightly instead of stretching to fill the
+   container's full height regardless of width. */
+#stage {
+  width: auto;
+  height: auto;
+  max-width: 70vw;
+  max-height: 100%;
+  background: #000;
+  border: 1px solid #333;
+}
+
+.bottom-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+}
+
+.playback-bar {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+}
+
 .stage-toolbar {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
   color: #ccc;
-  background: rgba(0, 0, 0, 0.6);
-  padding: 6px 10px;
-  border-radius: 6px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  padding: 10px 14px;
+  border-radius: 8px;
 }
 
 .stage-toolbar input[type="range"] {
@@ -49,12 +92,42 @@ html, body {
   text-align: right;
 }
 
-#stage {
-  width: 100%;
-  max-width: 70vw;
-  aspect-ratio: 16 / 9;
-  background: #000;
-  border: 1px solid #333;
+.pb-play-btn {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #3a3a3a;
+  color: #eee;
+  border: 1px solid #444;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+}
+
+.pb-play-btn:hover:not(:disabled) {
+  background: #4a4a4a;
+}
+
+.pb-play-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pb-time {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+  color: #999;
+  min-width: 3.5ch;
+}
+
+.pb-seek {
+  flex: 1 1 auto;
+  width: auto;
 }
 
 .panel {

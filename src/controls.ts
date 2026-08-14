@@ -36,6 +36,13 @@ function parseTimeToSeconds(input: string): number {
   return parseFloat(trimmed);
 }
 
+function formatTime(seconds: number): string {
+  const total = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 /** Keeps a <input type="color"> and a plain hex <input type="text"> in sync both ways. */
@@ -134,7 +141,10 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
   const renderRangeRow = el<HTMLElement>('renderRangeRow');
   const renderStartInput = el<HTMLInputElement>('renderStart');
   const renderEndInput = el<HTMLInputElement>('renderEnd');
-  const playBtn = el<HTMLButtonElement>('playBtn');
+  const pbPlayBtn = el<HTMLButtonElement>('pbPlayBtn');
+  const pbCurrentTime = el<HTMLElement>('pbCurrentTime');
+  const pbEndTime = el<HTMLElement>('pbEndTime');
+  const pbSeek = el<HTMLInputElement>('pbSeek');
   const renderBtn = el<HTMLButtonElement>('renderBtn');
   const statusEl = el<HTMLDivElement>('status');
   const renderProgressWrap = el<HTMLElement>('renderProgressWrap');
@@ -157,25 +167,57 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
   function resetOnEnded(): void {
     audioElement.onended = () => {
       state.isPlaying = false;
-      playBtn.textContent = 'Play';
+      pbPlayBtn.textContent = '▶';
+      pbPlayBtn.setAttribute('aria-label', 'Play');
     };
   }
   resetOnEnded();
 
   audioElement.onplay = () => {
     state.isPlaying = true;
-    playBtn.textContent = 'Pause';
+    pbPlayBtn.textContent = '⏸';
+    pbPlayBtn.setAttribute('aria-label', 'Pause');
   };
   audioElement.onpause = () => {
     state.isPlaying = false;
-    playBtn.textContent = 'Play';
+    pbPlayBtn.textContent = '▶';
+    pbPlayBtn.setAttribute('aria-label', 'Play');
   };
+
+  audioElement.addEventListener('loadedmetadata', () => {
+    pbEndTime.textContent = formatTime(audioElement.duration);
+  });
+
+  // Avoid the timeupdate listener fighting the slider while the user is
+  // actively dragging it.
+  let isScrubbing = false;
+  audioElement.addEventListener('timeupdate', () => {
+    pbCurrentTime.textContent = formatTime(audioElement.currentTime);
+    if (isScrubbing) return;
+    const duration = audioElement.duration;
+    if (Number.isFinite(duration) && duration > 0) {
+      pbSeek.value = String(Math.round((audioElement.currentTime / duration) * 1000));
+    }
+  });
+
+  pbSeek.addEventListener('input', () => {
+    isScrubbing = true;
+    const duration = audioElement.duration;
+    if (Number.isFinite(duration) && duration > 0) {
+      audioElement.currentTime = (Number(pbSeek.value) / 1000) * duration;
+      pbCurrentTime.textContent = formatTime(audioElement.currentTime);
+    }
+  });
+  pbSeek.addEventListener('change', () => {
+    isScrubbing = false;
+  });
 
   async function handleAudioFile(file: File): Promise<void> {
     const objectUrl = URL.createObjectURL(file);
     audioElement.src = objectUrl;
     state.hasAudio = true;
-    playBtn.disabled = false;
+    pbPlayBtn.disabled = false;
+    pbSeek.disabled = false;
     renderBtn.disabled = false;
     setStatus('Reading song info…');
 
@@ -308,7 +350,7 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
     state.renderEndSec = Number.isNaN(seconds) ? 0 : Math.max(0, seconds);
   });
 
-  playBtn.addEventListener('click', async () => {
+  pbPlayBtn.addEventListener('click', async () => {
     if (audioElement.paused) {
       await audioEngine.resume();
       try {
@@ -325,6 +367,11 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
     panel.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>('input, select, button').forEach((elm) => {
       elm.disabled = disabled;
     });
+    // The playback bar lives outside .panel (it's pinned to the preview area),
+    // so it needs disabling separately — otherwise you could still scrub/play
+    // while a recording is in progress and throw off the export.
+    pbPlayBtn.disabled = disabled;
+    pbSeek.disabled = disabled;
   }
 
   renderBtn.addEventListener('click', async () => {
