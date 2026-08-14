@@ -11,5 +11,8 @@
   "devDependencies": {
     "typescript": "^5.6.2",
     "vite": "^5.4.8"
+  },
+  "dependencies": {
+    "music-metadata": "^11.14.0"
   }
 }

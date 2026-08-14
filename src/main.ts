@@ -4,8 +4,8 @@ import { drawScene } from './renderer';
 import { setupControls } from './controls';
 import { LiveWaveformHistory } from './liveWaveform';
 
-// 120 samples at 8 samples/frame = 15 frames of history = 0.25s sweep at 60fps.
-const WAVEFORM_HISTORY_LENGTH = 120;
+// 72 samples at 8 samples/frame = 9 frames of history = 0.15s sweep at 60fps.
+const WAVEFORM_HISTORY_LENGTH = 72;
 const WAVEFORM_CHUNK_SIZE = 8;
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
@@ -33,10 +33,15 @@ function loop(): void {
     waveformHistory.pushSilence();
   }
 
-  const duration = audioElement.duration;
-  const playedFraction = duration && Number.isFinite(duration) && duration > 0 ? audioElement.currentTime / duration : 0;
-
-  drawScene(ctx!, state, freqData, waveformHistory.data, playedFraction, audioEngine.audioContext.sampleRate);
+  drawScene(
+    ctx!,
+    state,
+    freqData,
+    waveformHistory.data,
+    audioElement.currentTime,
+    audioElement.duration,
+    audioEngine.audioContext.sampleRate
+  );
 
   requestAnimationFrame(loop);
 }

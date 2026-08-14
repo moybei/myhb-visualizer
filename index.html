@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>myhb-visualizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+Antique&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -39,32 +42,45 @@
         </label>
 
         <label>Background color
-          <input type="color" id="bgColor" value="#000000" />
+          <span class="color-with-hex">
+            <input type="color" id="bgColor" value="#000000" />
+            <input type="text" id="bgColorHex" class="hex-input" value="#000000" maxlength="7" spellcheck="false" />
+          </span>
         </label>
         <label>Background image
           <input type="file" id="bgImageFile" accept="image/*" />
         </label>
-        <label>Zoom
-          <input type="range" id="bgZoom" min="1" max="2" step="0.01" value="1.15" />
+        <label>Zoom (double-click to reset)
+          <input type="range" id="bgZoom" min="1" max="2" step="0.01" value="1.15" title="Double-click to reset" />
         </label>
-        <label>Blur
-          <input type="range" id="bgBlur" min="0" max="40" step="1" value="18" />
+        <label>Blur (double-click to reset)
+          <input type="range" id="bgBlur" min="0" max="40" step="1" value="18" title="Double-click to reset" />
+        </label>
+        <label>Brightness (double-click to reset)
+          <input type="range" id="bgBrightness" min="0" max="200" step="1" value="100" title="Double-click to reset" />
         </label>
       </section>
 
       <section>
         <h2>Text</h2>
-        <label>Original artist
-          <input type="text" id="artistName" placeholder="25時、ナイトコードで。× 初音ミク" />
+        <label>Artist
+          <input type="text" id="artistName" placeholder="MYHB" />
         </label>
         <label>Title
-          <input type="text" id="songTitle" placeholder="Bad Apple!! feat. SEKAI (MYHB Remix)" />
+          <input type="text" id="songTitle" placeholder="Make Your Heart Beat" />
         </label>
-        <label>Text color
-          <input type="color" id="textColor" value="#ffffff" />
+        <label>Subtitle (optional)
+          <input type="text" id="titleSubtitle" placeholder="Extended Remix Ver." />
+        </label>
+        <label>Theme color
+          <span class="color-with-hex">
+            <input type="color" id="textColor" value="#ffffff" />
+            <input type="text" id="textColorHex" class="hex-input" value="#ffffff" maxlength="7" spellcheck="false" />
+          </span>
         </label>
         <label>Font
           <select id="fontFamily">
+            <option value="'Zen Kaku Gothic Antique', sans-serif" selected>Zen Kaku Gothic Antique</option>
             <option value="'Helvetica Neue', Arial, sans-serif">Helvetica / Arial</option>
             <option value="Georgia, 'Times New Roman', serif">Georgia / Serif</option>
             <option value="'Courier New', monospace">Courier / Mono</option>
@@ -74,15 +90,29 @@
 
       <section>
         <h2>Visualizer</h2>
-        <label>Bar color
-          <input type="color" id="visualizerColor" value="#ffffff" />
+        <label class="radio-row">
+          <input type="radio" name="barColorMode" value="theme" checked /> Bar color: Follow theme
+        </label>
+        <label class="radio-row">
+          <input type="radio" name="barColorMode" value="custom" /> Bar color: Custom
+        </label>
+        <label id="barColorRow" style="display:none">Bar color
+          <span class="color-with-hex">
+            <input type="color" id="visualizerColor" value="#ffffff" />
+            <input type="text" id="visualizerColorHex" class="hex-input" value="#ffffff" maxlength="7" spellcheck="false" />
+          </span>
         </label>
         <label>Style
           <select id="visualizerStyle">
             <option value="bars" selected>Bars</option>
-            <option value="mirroredBars">Mirrored bars</option>
-            <option value="line">Line (thin)</option>
+            <option value="mirroredBars">Mirrored bars (2-sided)</option>
           </select>
+        </label>
+        <label>Min frequency (Hz)
+          <input type="number" id="spectrumMinHz" min="0" max="20000" step="10" value="0" />
+        </label>
+        <label>Max frequency (Hz)
+          <input type="number" id="spectrumMaxHz" min="0" max="20000" step="10" value="3000" />
         </label>
       </section>
 

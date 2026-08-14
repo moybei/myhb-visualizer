@@ -5,50 +5,57 @@ import type { AppState } from './state';
 const STAGE_W = 1920;
 const STAGE_H = 1080;
 
-const ART_BOX = { x: 130, y: 150, size: 640 };
-const TEXT_X = ART_BOX.x + ART_BOX.size + 90; // 860
+const GAP_ART_TO_TEXT = 150; // spacing between the album art box and the text column
+
+const ART_BOX = { x: 190, y: 160, size: 640 }; // top padding trimmed back down a bit
+const TEXT_X = ART_BOX.x + ART_BOX.size + GAP_ART_TO_TEXT;
 const TEXT_RIGHT_MARGIN = 130;
 const TEXT_W = STAGE_W - TEXT_RIGHT_MARGIN - TEXT_X;
 
-const ARTIST_LABEL_Y = 220;
-const ARTIST_VALUE_Y = 275;
-const TITLE_LABEL_Y = 400;
-const TITLE_VALUE_Y = 455;
-const WAVEFORM_LABEL_Y = 590;
-const WAVEFORM_FIELD_Y = 615;
+// Offsets from the album art box's top, so the text stack's internal rhythm
+// follows automatically if the box ever moves vertically.
+const ARTIST_LABEL_Y = ART_BOX.y + 70;
+const ARTIST_VALUE_Y = ART_BOX.y + 125;
+const TITLE_LABEL_Y = ART_BOX.y + 250;
+const TITLE_VALUE_Y = ART_BOX.y + 305;
+const TITLE_SUBTITLE_Y = ART_BOX.y + 350;
+const WAVEFORM_LABEL_Y = ART_BOX.y + 440;
+const WAVEFORM_FIELD_Y = ART_BOX.y + 465;
 const WAVEFORM_FIELD_H = 126; // 90 * 1.4 — 40% taller
 const WAVEFORM_FIELD_W = Math.round(TEXT_W * 0.5); // halved per feedback
 
+// Bottom cluster stays independent of the top padding — anchored to the
+// stage bottom as before.
 const SPECTRUM_X = 80;
 const SPECTRUM_W = STAGE_W - SPECTRUM_X * 2;
-const SPECTRUM_Y = STAGE_H - 220;
+const SPECTRUM_Y = STAGE_H - 260; // more bottom padding — whole cluster shifted up
 const SPECTRUM_H = 120;
 
 const PROGRESS_BAR_X = SPECTRUM_X;
 const PROGRESS_BAR_W = SPECTRUM_W;
 const PROGRESS_BAR_Y = SPECTRUM_Y + SPECTRUM_H + 26;
 const PROGRESS_BAR_H = 6;
+const TIME_LABEL_Y = PROGRESS_BAR_Y + PROGRESS_BAR_H + 34;
 
-// Lots of thin bars, like the reference screenshot's dense spectrum look.
-const NUM_SPECTRUM_BARS = 300;
-const SPECTRUM_FREQ_MIN_HZ = 40;
-const SPECTRUM_FREQ_MAX_HZ = 6000;
+const NUM_SPECTRUM_BARS = 150;
 
 let bgCacheCanvas: HTMLCanvasElement | null = null;
 let bgCacheKey = '';
 
 /**
  * Draws one full frame of the scene. `freqData`/`waveformHistory` are null before
- * any playback has started. `playedFraction` drives only the bottom progress bar.
- * `sampleRate` is the AudioContext's sample rate, needed to map the spectrum's
- * frequency band (Hz) to analyser bin indices.
+ * any playback has started. `currentTimeSec`/`durationSec` drive the bottom
+ * progress bar and its time labels (`durationSec` may be NaN before the audio
+ * file's metadata has loaded). `sampleRate` is the AudioContext's sample rate,
+ * needed to map the spectrum's frequency band (Hz) to analyser bin indices.
  */
 export function drawScene(
   ctx: CanvasRenderingContext2D,
   state: AppState,
   freqData: Uint8Array | null,
   waveformHistory: Float32Array | null,
-  playedFraction: number,
+  currentTimeSec: number,
+  durationSec: number,
   sampleRate: number
 ): void {
   ctx.clearRect(0, 0, STAGE_W, STAGE_H);
@@ -58,34 +65,37 @@ export function drawScene(
   drawTextStack(ctx, state);
   drawWaveformField(ctx, state, waveformHistory);
   drawSpectrumBar(ctx, state, freqData, sampleRate);
-  drawProgressBar(ctx, state, playedFraction);
+  drawProgressBar(ctx, state, currentTimeSec, durationSec);
 }
 
 function drawBackground(ctx: CanvasRenderingContext2D, state: AppState): void {
+  // Scoped so the brightness filter never leaks into later layers (album art,
+  // text, etc.) — only the background itself gets brightened/darkened.
+  ctx.save();
+  ctx.filter = `brightness(${state.backgroundBrightness}%)`;
+
   if (state.backgroundMode === 'color') {
     ctx.fillStyle = state.backgroundColor;
     ctx.fillRect(0, 0, STAGE_W, STAGE_H);
-    return;
-  }
-
-  if (state.backgroundMode === 'image') {
+  } else if (state.backgroundMode === 'image') {
     if (state.backgroundImage) {
       drawImageCover(ctx, state.backgroundImage, 0, 0, STAGE_W, STAGE_H, 1);
     } else {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, STAGE_W, STAGE_H);
     }
-    return;
+  } else {
+    // blurredAlbumArt
+    const cached = getBlurredBackgroundCanvas(state);
+    if (cached) {
+      ctx.drawImage(cached, 0, 0);
+    } else {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+    }
   }
 
-  // blurredAlbumArt
-  const cached = getBlurredBackgroundCanvas(state);
-  if (cached) {
-    ctx.drawImage(cached, 0, 0);
-  } else {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, STAGE_W, STAGE_H);
-  }
+  ctx.restore();
 }
 
 /**
@@ -133,9 +143,22 @@ function drawAlbumArtBox(ctx: CanvasRenderingContext2D, state: AppState): void {
   ctx.strokeRect(x, y, size, size);
 }
 
-function drawLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number): void {
-  ctx.font = '600 24px -apple-system, "Segoe UI", Arial, sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+const LABEL_FONT = '600 24px -apple-system, "Segoe UI", Arial, sans-serif';
+const LABEL_OPACITY = 0.55;
+
+/** Parses "#rrggbb" into "rgba(r,g,b,alpha)" — falls back to white if malformed. */
+function hexToRgba(hex: string, alpha: number): string {
+  const match = /^#([0-9a-fA-F]{6})$/.exec(hex);
+  if (!match) return `rgba(255,255,255,${alpha})`;
+  const r = parseInt(match[1].slice(0, 2), 16);
+  const g = parseInt(match[1].slice(2, 4), 16);
+  const b = parseInt(match[1].slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function drawLabel(ctx: CanvasRenderingContext2D, state: AppState, text: string, x: number, y: number): void {
+  ctx.font = LABEL_FONT;
+  ctx.fillStyle = hexToRgba(state.textColor, LABEL_OPACITY);
   ctx.textBaseline = 'alphabetic';
   // Manual letter-spacing: ctx.letterSpacing isn't reliably supported across
   // Chrome/Safari versions, so space the characters out by hand instead.
@@ -144,17 +167,23 @@ function drawLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: nu
 }
 
 function drawTextStack(ctx: CanvasRenderingContext2D, state: AppState): void {
-  drawLabel(ctx, 'Original Artist', TEXT_X, ARTIST_LABEL_Y);
-  ctx.font = `600 52px ${state.fontFamily}`;
+  drawLabel(ctx, state, 'Artist', TEXT_X, ARTIST_LABEL_Y);
+  ctx.font = `400 52px ${state.fontFamily}`;
   ctx.fillStyle = state.textColor;
-  fillTextClipped(ctx, state.artistName || 'Artist Name', TEXT_X, ARTIST_VALUE_Y, TEXT_W);
+  fillTextClipped(ctx, state.artistName || 'MYHB', TEXT_X, ARTIST_VALUE_Y, TEXT_W);
 
-  drawLabel(ctx, 'Title', TEXT_X, TITLE_LABEL_Y);
-  ctx.font = `600 52px ${state.fontFamily}`;
+  drawLabel(ctx, state, 'Title', TEXT_X, TITLE_LABEL_Y);
+  ctx.font = `400 52px ${state.fontFamily}`;
   ctx.fillStyle = state.textColor;
-  fillTextClipped(ctx, state.songTitle || 'Song Title', TEXT_X, TITLE_VALUE_Y, TEXT_W);
+  fillTextClipped(ctx, state.songTitle || 'Make Your Heart Beat', TEXT_X, TITLE_VALUE_Y, TEXT_W);
 
-  drawLabel(ctx, 'Waveform', TEXT_X, WAVEFORM_LABEL_Y);
+  if (state.titleSubtitle) {
+    ctx.font = `400 28px ${state.fontFamily}`;
+    ctx.fillStyle = state.textColor;
+    fillTextClipped(ctx, state.titleSubtitle, TEXT_X, TITLE_SUBTITLE_Y, TEXT_W);
+  }
+
+  drawLabel(ctx, state, 'Waveform', TEXT_X, WAVEFORM_LABEL_Y);
 }
 
 function fillTextClipped(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number): void {
@@ -209,9 +238,21 @@ function drawWaveformField(ctx: CanvasRenderingContext2D, state: AppState, wavef
   ctx.stroke();
 }
 
-// A sub-linear exponent boosts quieter moments so bars keep moving instead of
-// sitting flat between hits.
-const SPECTRUM_RESPONSE_EXPONENT = 0.6;
+// The analyser's minDecibels/maxDecibels window (see audioEngine.ts) now does
+// the main log-domain contrast work — normal level low, real hits near max.
+// This curve is just a light residual shaping on top of that, not the primary
+// mechanism anymore, so it's much milder than before.
+const SPECTRUM_RESPONSE_EXPONENT = 1.6;
+const SPECTRUM_SENSITIVITY = 1.2;
+
+// Per-bar attack/release envelope (like a real level meter) instead of relying
+// solely on the analyser's own smoothing, which dampens rises and falls
+// equally. A fast attack lets a kick/snare transient snap up to its full
+// height immediately (so it actually reads as a hit), while a slow release
+// lets it fade back out gently instead of vanishing next frame.
+const SPECTRUM_ATTACK = 0.9;
+const SPECTRUM_RELEASE = 0.12;
+let spectrumEnvelope: Float32Array | null = null;
 
 function drawSpectrumBar(ctx: CanvasRenderingContext2D, state: AppState, freqData: Uint8Array | null, sampleRate: number): void {
   const x = SPECTRUM_X;
@@ -219,10 +260,17 @@ function drawSpectrumBar(ctx: CanvasRenderingContext2D, state: AppState, freqDat
   const w = SPECTRUM_W;
   const h = SPECTRUM_H;
   const barWidth = w / NUM_SPECTRUM_BARS;
-  const gap = Math.min(1.5, barWidth * 0.25);
+  const gap = barWidth * 0.7;
 
-  ctx.fillStyle = state.visualizerColor;
-  ctx.strokeStyle = state.visualizerColor;
+  // Follows the theme color by default; once the user picks their own bar
+  // color it stops following and stays independent.
+  const barColor = state.visualizerColorCustomized ? state.visualizerColor : state.textColor;
+  ctx.fillStyle = barColor;
+  ctx.strokeStyle = barColor;
+
+  if (!spectrumEnvelope || spectrumEnvelope.length !== NUM_SPECTRUM_BARS) {
+    spectrumEnvelope = new Float32Array(NUM_SPECTRUM_BARS);
+  }
 
   if (!freqData) {
     // idle state before playback starts: flat baseline
@@ -235,25 +283,17 @@ function drawSpectrumBar(ctx: CanvasRenderingContext2D, state: AppState, freqDat
   // Map the requested Hz band onto analyser bin indices using the real sample
   // rate: bin i covers i * (sampleRate / 2) / freqData.length Hz.
   const nyquist = sampleRate / 2;
-  const startBin = Math.max(0, Math.floor((SPECTRUM_FREQ_MIN_HZ / nyquist) * freqData.length));
-  const endBin = Math.min(freqData.length, Math.ceil((SPECTRUM_FREQ_MAX_HZ / nyquist) * freqData.length));
+  const startBin = Math.max(0, Math.floor((state.spectrumMinHz / nyquist) * freqData.length));
+  const endBin = Math.min(freqData.length, Math.ceil((state.spectrumMaxHz / nyquist) * freqData.length));
 
-  if (state.visualizerStyle === 'line') {
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    for (let i = 0; i < NUM_SPECTRUM_BARS; i++) {
-      const value = sampleBand(freqData, i, startBin, endBin);
-      const px = x + i * barWidth + barWidth / 2;
-      const py = y + h - value * h;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.stroke();
-    return;
+  for (let i = 0; i < NUM_SPECTRUM_BARS; i++) {
+    const target = sampleBand(freqData, i, startBin, endBin);
+    const rate = target > spectrumEnvelope[i] ? SPECTRUM_ATTACK : SPECTRUM_RELEASE;
+    spectrumEnvelope[i] += (target - spectrumEnvelope[i]) * rate;
   }
 
   for (let i = 0; i < NUM_SPECTRUM_BARS; i++) {
-    const value = sampleBand(freqData, i, startBin, endBin);
+    const value = spectrumEnvelope[i];
     const barHeight = Math.max(2, value * h);
     const bx = x + i * barWidth;
 
@@ -273,20 +313,44 @@ function sampleBand(freqData: Uint8Array, bandIndex: number, startBin: number, e
   let sum = 0;
   for (let i = start; i < end; i++) sum += freqData[i];
   const raw = sum / (end - start) / 255;
-  return Math.pow(raw, SPECTRUM_RESPONSE_EXPONENT);
+  return Math.min(1, Math.pow(raw, SPECTRUM_RESPONSE_EXPONENT) * SPECTRUM_SENSITIVITY);
 }
 
-function drawProgressBar(ctx: CanvasRenderingContext2D, state: AppState, playedFraction: number): void {
+function drawProgressBar(ctx: CanvasRenderingContext2D, state: AppState, currentTimeSec: number, durationSec: number): void {
   const x = PROGRESS_BAR_X;
   const y = PROGRESS_BAR_Y;
   const w = PROGRESS_BAR_W;
   const h = PROGRESS_BAR_H;
 
-  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  const hasDuration = Number.isFinite(durationSec) && durationSec > 0;
+  const playedFraction = hasDuration ? currentTimeSec / durationSec : 0;
+
+  // Track tinted with the theme color at low opacity — dark enough to read as
+  // a track (not the bright fill), but still visibly colored, not plain gray.
+  ctx.fillStyle = hexToRgba(state.textColor, 0.2);
   ctx.fillRect(x, y, w, h);
 
-  ctx.fillStyle = state.visualizerColor;
+  ctx.fillStyle = state.textColor;
   ctx.fillRect(x, y, w * Math.max(0, Math.min(1, playedFraction)), h);
+
+  ctx.font = LABEL_FONT;
+  ctx.fillStyle = hexToRgba(state.textColor, LABEL_OPACITY);
+  ctx.textBaseline = 'alphabetic';
+
+  ctx.textAlign = 'left';
+  ctx.fillText(formatTime(currentTimeSec), x, TIME_LABEL_Y);
+
+  ctx.textAlign = 'right';
+  ctx.fillText(formatTime(hasDuration ? durationSec : 0), x + w, TIME_LABEL_Y);
+
+  ctx.textAlign = 'left';
+}
+
+function formatTime(seconds: number): string {
+  const total = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 /** Draws `img` covering the target rect (like CSS background-size: cover). zoom > 1 crops in tighter. */

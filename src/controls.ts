@@ -1,6 +1,7 @@
 import type { AppState, BackgroundMode, VisualizerStyle } from './state';
 import type { AudioEngine } from './audioEngine';
 import { startExport } from './exporter';
+import { extractMetadata } from './metadata';
 
 function el<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -23,6 +24,31 @@ function sanitizeFilenamePart(text: string): string {
   return trimmed.length > 0 ? trimmed.replace(/[\\/:*?"<>|]/g, '') : '';
 }
 
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+/** Keeps a <input type="color"> and a plain hex <input type="text"> in sync both ways. */
+function bindColorWithHex(colorInput: HTMLInputElement, hexInput: HTMLInputElement, onChange: (hex: string) => void): void {
+  colorInput.addEventListener('input', () => {
+    hexInput.value = colorInput.value;
+    onChange(colorInput.value);
+  });
+  hexInput.addEventListener('input', () => {
+    const value = hexInput.value.startsWith('#') ? hexInput.value : `#${hexInput.value}`;
+    if (HEX_COLOR_RE.test(value)) {
+      colorInput.value = value;
+      onChange(value);
+    }
+  });
+}
+
+/** Double-click a range input to snap it back to its default value. */
+function bindSliderReset(input: HTMLInputElement, defaultValue: number, onChange: (value: number) => void): void {
+  input.addEventListener('dblclick', () => {
+    input.value = String(defaultValue);
+    onChange(defaultValue);
+  });
+}
+
 export interface ControlDeps {
   state: AppState;
   audioEngine: AudioEngine;
@@ -36,14 +62,23 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
   const bgImageFileInput = el<HTMLInputElement>('bgImageFile');
   const bgModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="bgMode"]');
   const bgColorInput = el<HTMLInputElement>('bgColor');
+  const bgColorHexInput = el<HTMLInputElement>('bgColorHex');
   const bgZoomInput = el<HTMLInputElement>('bgZoom');
   const bgBlurInput = el<HTMLInputElement>('bgBlur');
+  const bgBrightnessInput = el<HTMLInputElement>('bgBrightness');
   const artistNameInput = el<HTMLInputElement>('artistName');
   const songTitleInput = el<HTMLInputElement>('songTitle');
+  const titleSubtitleInput = el<HTMLInputElement>('titleSubtitle');
   const textColorInput = el<HTMLInputElement>('textColor');
+  const textColorHexInput = el<HTMLInputElement>('textColorHex');
   const fontFamilySelect = el<HTMLSelectElement>('fontFamily');
   const visualizerColorInput = el<HTMLInputElement>('visualizerColor');
+  const visualizerColorHexInput = el<HTMLInputElement>('visualizerColorHex');
+  const barColorModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="barColorMode"]');
+  const barColorRow = el<HTMLElement>('barColorRow');
   const visualizerStyleSelect = el<HTMLSelectElement>('visualizerStyle');
+  const spectrumMinHzInput = el<HTMLInputElement>('spectrumMinHz');
+  const spectrumMaxHzInput = el<HTMLInputElement>('spectrumMaxHz');
   const playBtn = el<HTMLButtonElement>('playBtn');
   const renderBtn = el<HTMLButtonElement>('renderBtn');
   const statusEl = el<HTMLDivElement>('status');
@@ -72,7 +107,7 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
     playBtn.textContent = 'Play';
   };
 
-  audioFileInput.addEventListener('change', () => {
+  audioFileInput.addEventListener('change', async () => {
     const file = audioFileInput.files?.[0];
     if (!file) return;
 
@@ -81,6 +116,28 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
     state.hasAudio = true;
     playBtn.disabled = false;
     renderBtn.disabled = false;
+    setStatus('Reading song info…');
+
+    // Best-effort autofill from the file's own tags (ID3/Vorbis/MP4) — artist,
+    // title, embedded cover art. Purely a convenience: fields stay fully
+    // editable after, and a file with no tags just leaves them as they were.
+    try {
+      const meta = await extractMetadata(file);
+      if (meta.artist) {
+        state.artistName = meta.artist;
+        artistNameInput.value = meta.artist;
+      }
+      if (meta.title) {
+        state.songTitle = meta.title;
+        songTitleInput.value = meta.title;
+      }
+      if (meta.albumArtImage) {
+        state.albumArtImage = meta.albumArtImage;
+      }
+    } catch {
+      // No readable tags — not an error the user needs to see, just skip autofill.
+    }
+
     setStatus('Ready.');
   });
 
@@ -102,8 +159,8 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
     });
   });
 
-  bgColorInput.addEventListener('input', () => {
-    state.backgroundColor = bgColorInput.value;
+  bindColorWithHex(bgColorInput, bgColorHexInput, (hex) => {
+    state.backgroundColor = hex;
   });
   bgZoomInput.addEventListener('input', () => {
     state.backgroundZoom = parseFloat(bgZoomInput.value);
@@ -111,6 +168,12 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
   bgBlurInput.addEventListener('input', () => {
     state.backgroundBlurPx = parseFloat(bgBlurInput.value);
   });
+  bgBrightnessInput.addEventListener('input', () => {
+    state.backgroundBrightness = parseFloat(bgBrightnessInput.value);
+  });
+  bindSliderReset(bgZoomInput, 1.15, (v) => (state.backgroundZoom = v));
+  bindSliderReset(bgBlurInput, 18, (v) => (state.backgroundBlurPx = v));
+  bindSliderReset(bgBrightnessInput, 100, (v) => (state.backgroundBrightness = v));
 
   artistNameInput.addEventListener('input', () => {
     state.artistName = artistNameInput.value;
@@ -118,18 +181,42 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
   songTitleInput.addEventListener('input', () => {
     state.songTitle = songTitleInput.value;
   });
-  textColorInput.addEventListener('input', () => {
-    state.textColor = textColorInput.value;
+  titleSubtitleInput.addEventListener('input', () => {
+    state.titleSubtitle = titleSubtitleInput.value;
+  });
+  bindColorWithHex(textColorInput, textColorHexInput, (hex) => {
+    state.textColor = hex;
   });
   fontFamilySelect.addEventListener('change', () => {
     state.fontFamily = fontFamilySelect.value;
   });
 
-  visualizerColorInput.addEventListener('input', () => {
-    state.visualizerColor = visualizerColorInput.value;
+  bindColorWithHex(visualizerColorInput, visualizerColorHexInput, (hex) => {
+    state.visualizerColor = hex;
+  });
+  barColorModeRadios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      const isCustom = radio.value === 'custom';
+      state.visualizerColorCustomized = isCustom;
+      barColorRow.style.display = isCustom ? '' : 'none';
+      // Seed the custom picker with the current theme color as a starting point.
+      if (isCustom) {
+        visualizerColorInput.value = state.textColor;
+        visualizerColorHexInput.value = state.textColor;
+        state.visualizerColor = state.textColor;
+      }
+    });
   });
   visualizerStyleSelect.addEventListener('change', () => {
     state.visualizerStyle = visualizerStyleSelect.value as VisualizerStyle;
+  });
+
+  spectrumMinHzInput.addEventListener('input', () => {
+    state.spectrumMinHz = parseFloat(spectrumMinHzInput.value) || 0;
+  });
+  spectrumMaxHzInput.addEventListener('input', () => {
+    state.spectrumMaxHz = parseFloat(spectrumMaxHzInput.value) || 0;
   });
 
   playBtn.addEventListener('click', async () => {

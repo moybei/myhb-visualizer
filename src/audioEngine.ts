@@ -18,10 +18,24 @@ export class AudioEngine {
     this.audioContext = new AudioContextCtor();
 
     this.analyser = this.audioContext.createAnalyser();
-    this.analyser.fftSize = 2048;
-    // Lower smoothing so the spectrum reacts snappily to hits instead of
-    // lagging/averaging them into a flat-looking line.
-    this.analyser.smoothingTimeConstant = 0.35;
+    // 1024 gives crisp bar separation without the CPU cost of a larger FFT.
+    // Smoothing is kept low here on purpose: the analyser's own smoothing
+    // dampens both rises AND falls equally, which blunts real transients
+    // (kick/snare) before they even reach the renderer. The renderer applies
+    // its own fast-attack/slow-release envelope per bar instead, so motion
+    // still looks calm without flattening hits at the source.
+    this.analyser.fftSize = 1024;
+    this.analyser.smoothingTimeConstant = 0.4;
+    // getByteFrequencyData() is already dB-scaled (log), linearly mapped from
+    // minDecibels..maxDecibels into 0..255. The default window (-100 to -30dB)
+    // sits high enough that normal program material already reads "loud" before
+    // any further shaping — narrowing + raising it does the log-domain work
+    // properly (floor cuts normal/ambient level to near-zero, ceiling requires
+    // a real hit to approach 255) instead of faking it with a post-hoc power
+    // curve on top of already-log data. These are starting points — nudge them
+    // by ear/eye once tested against a real track.
+    this.analyser.minDecibels = -60;
+    this.analyser.maxDecibels = -20;
 
     this.gainNode = this.audioContext.createGain();
     this.streamDestination = this.audioContext.createMediaStreamDestination();
