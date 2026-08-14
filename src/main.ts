@@ -4,8 +4,8 @@ import { drawScene } from './renderer';
 import { setupControls } from './controls';
 import { LiveWaveformHistory } from './liveWaveform';
 
-// 240 samples at 8 samples/frame = 30 frames of history = 0.5s sweep at 60fps.
-const WAVEFORM_HISTORY_LENGTH = 240;
+// 120 samples at 8 samples/frame = 15 frames of history = 0.25s sweep at 60fps.
+const WAVEFORM_HISTORY_LENGTH = 120;
 const WAVEFORM_CHUNK_SIZE = 8;
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
