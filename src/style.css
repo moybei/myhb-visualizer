@@ -21,8 +21,30 @@ html, body {
 .stage-wrap {
   flex: 1 1 640px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 12px;
+}
+
+.stage-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #ccc;
+  width: 100%;
+  max-width: 75vw;
+}
+
+.stage-toolbar input[type="range"] {
+  flex: 1 1 auto;
+  max-width: 200px;
+}
+
+.stage-toolbar span {
+  min-width: 3.5ch;
+  text-align: right;
 }
 
 #stage {

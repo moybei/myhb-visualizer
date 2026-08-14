@@ -69,6 +69,16 @@ export interface ControlDeps {
 }
 
 export function setupControls({ state, audioEngine, audioElement, canvas }: ControlDeps): void {
+  const previewScaleInput = el<HTMLInputElement>('previewScale');
+  const previewScaleLabel = el<HTMLElement>('previewScaleLabel');
+  previewScaleInput.addEventListener('input', () => {
+    const pct = previewScaleInput.value;
+    // Display size only — the canvas's actual pixel buffer (and therefore the
+    // recorded/exported resolution) always stays 1920x1080 regardless of this.
+    canvas.style.maxWidth = `${pct}vw`;
+    previewScaleLabel.textContent = `${pct}%`;
+  });
+
   const audioFileInput = el<HTMLInputElement>('audioFile');
   const albumArtFileInput = el<HTMLInputElement>('albumArtFile');
   const bgImageFileInput = el<HTMLInputElement>('bgImageFile');

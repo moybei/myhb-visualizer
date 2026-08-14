@@ -12,6 +12,11 @@
 <body>
   <div class="app">
     <div class="stage-wrap">
+      <div class="stage-toolbar">
+        <label for="previewScale">Preview size</label>
+        <input type="range" id="previewScale" min="30" max="100" step="5" value="75" />
+        <span id="previewScaleLabel">75%</span>
+      </div>
       <canvas id="stage" width="1920" height="1080"></canvas>
       <audio id="audioEl" style="display:none" preload="auto"></audio>
     </div>
