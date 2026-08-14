@@ -1,5 +1,10 @@
 // Wraps the Web Audio graph for a single <audio> element:
-//   audioElement -> MediaElementAudioSourceNode -> AnalyserNode -> GainNode -> [speakers, MediaStreamAudioDestinationNode]
+//   audioElement -> MediaElementAudioSourceNode -> AnalyserNode -> [speakerGain -> speakers]
+//                                                                -> [recordGain -> MediaStreamAudioDestinationNode]
+//
+// The speaker and recording paths get their own gain nodes so muteSpeaker()
+// can silence what you (and anyone nearby) hear during export without
+// touching the recorded audio at all — the video still gets full volume.
 //
 // createMediaElementSource() can only be called once per <audio> element, so this
 // engine is constructed exactly once at startup and reused for every loaded file
@@ -7,7 +12,8 @@
 export class AudioEngine {
   readonly audioContext: AudioContext;
   readonly analyser: AnalyserNode;
-  readonly gainNode: GainNode;
+  readonly speakerGain: GainNode;
+  private readonly recordGain: GainNode;
   readonly streamDestination: MediaStreamAudioDestinationNode;
   private readonly freqData: Uint8Array<ArrayBuffer>;
   private readonly timeDomainData: Float32Array<ArrayBuffer>;
@@ -37,16 +43,23 @@ export class AudioEngine {
     this.analyser.minDecibels = -60;
     this.analyser.maxDecibels = -20;
 
-    this.gainNode = this.audioContext.createGain();
+    this.speakerGain = this.audioContext.createGain();
+    this.recordGain = this.audioContext.createGain();
     this.streamDestination = this.audioContext.createMediaStreamDestination();
     this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
     this.timeDomainData = new Float32Array(this.analyser.fftSize);
 
     const sourceNode = this.audioContext.createMediaElementSource(audioElement);
     sourceNode.connect(this.analyser);
-    this.analyser.connect(this.gainNode);
-    this.gainNode.connect(this.audioContext.destination);
-    this.gainNode.connect(this.streamDestination);
+    this.analyser.connect(this.speakerGain);
+    this.analyser.connect(this.recordGain);
+    this.speakerGain.connect(this.audioContext.destination);
+    this.recordGain.connect(this.streamDestination);
+  }
+
+  /** Silences what plays through the speakers without affecting the recorded audio at all. */
+  setSpeakerMuted(muted: boolean): void {
+    this.speakerGain.gain.value = muted ? 0 : 1;
   }
 
   /** Must be called synchronously inside a user-gesture handler (click) on both Chrome and Safari. */

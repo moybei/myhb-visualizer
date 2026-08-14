@@ -90,13 +90,14 @@
 
       <section>
         <h2>Visualizer</h2>
+        <span class="group-title">Bar color</span>
         <label class="radio-row">
-          <input type="radio" name="barColorMode" value="theme" checked /> Bar color: Follow theme
+          <input type="radio" name="barColorMode" value="theme" checked /> Follow theme
         </label>
         <label class="radio-row">
-          <input type="radio" name="barColorMode" value="custom" /> Bar color: Custom
+          <input type="radio" name="barColorMode" value="custom" /> Custom
         </label>
-        <label id="barColorRow" style="display:none">Bar color
+        <label id="barColorRow" style="display:none">
           <span class="color-with-hex">
             <input type="color" id="visualizerColor" value="#ffffff" />
             <input type="text" id="visualizerColorHex" class="hex-input" value="#ffffff" maxlength="7" spellcheck="false" />
@@ -118,9 +119,27 @@
 
       <section>
         <h2>Playback</h2>
+        <span class="group-title">Render range</span>
+        <label class="radio-row">
+          <input type="radio" name="renderRangeMode" value="full" checked /> Whole song
+        </label>
+        <label class="radio-row">
+          <input type="radio" name="renderRangeMode" value="custom" /> Custom range
+        </label>
+        <div id="renderRangeRow" style="display:none">
+          <label>Start (mm:ss)
+            <input type="text" id="renderStart" placeholder="0:00" value="0:00" />
+          </label>
+          <label>End (mm:ss, blank = end of song)
+            <input type="text" id="renderEnd" placeholder="1:30" />
+          </label>
+        </div>
         <button id="playBtn" disabled>Play</button>
         <button id="renderBtn" disabled>Render Video</button>
         <div id="status" class="status"></div>
+        <div id="renderProgressWrap" class="progress-track" style="display:none">
+          <div id="renderProgressFill" class="progress-fill"></div>
+        </div>
         <a id="downloadLink" class="download-link" style="display:none" download>Download video</a>
       </section>
     </div>

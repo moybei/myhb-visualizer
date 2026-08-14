@@ -7,7 +7,7 @@ const STAGE_H = 1080;
 
 const GAP_ART_TO_TEXT = 150; // spacing between the album art box and the text column
 
-const ART_BOX = { x: 190, y: 160, size: 640 }; // top padding trimmed back down a bit
+const ART_BOX = { x: 190, y: 110, size: 640 }; // moved up for more gap before the spectrum section
 const TEXT_X = ART_BOX.x + ART_BOX.size + GAP_ART_TO_TEXT;
 const TEXT_RIGHT_MARGIN = 130;
 const TEXT_W = STAGE_W - TEXT_RIGHT_MARGIN - TEXT_X;

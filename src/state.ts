@@ -1,5 +1,6 @@
 export type BackgroundMode = 'color' | 'image' | 'blurredAlbumArt';
 export type VisualizerStyle = 'bars' | 'mirroredBars';
+export type RenderRangeMode = 'full' | 'custom';
 
 export interface AppState {
   albumArtImage: HTMLImageElement | null;
@@ -25,6 +26,12 @@ export interface AppState {
   spectrumMaxHz: number;
 
   hasAudio: boolean;
+
+  renderRangeMode: RenderRangeMode;
+  /** Seconds. Only meaningful when renderRangeMode is 'custom'. */
+  renderStartSec: number;
+  /** Seconds. 0 means "to the end" when renderRangeMode is 'custom'. */
+  renderEndSec: number;
 
   isPlaying: boolean;
   isRecording: boolean;
@@ -54,6 +61,10 @@ export function createInitialState(): AppState {
     spectrumMaxHz: 3000,
 
     hasAudio: false,
+
+    renderRangeMode: 'full',
+    renderStartSec: 0,
+    renderEndSec: 0,
 
     isPlaying: false,
     isRecording: false,

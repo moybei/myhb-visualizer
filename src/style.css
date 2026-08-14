@@ -27,7 +27,7 @@ html, body {
 
 #stage {
   width: 100%;
-  max-width: 960px;
+  max-width: 75vw;
   aspect-ratio: 16 / 9;
   background: #000;
   border: 1px solid #333;
@@ -75,6 +75,13 @@ html, body {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.group-title {
+  display: block;
+  font-size: 13px;
+  color: #ccc;
+  margin-bottom: 6px;
 }
 
 .panel input[type="text"],
@@ -160,4 +167,21 @@ html, body {
   border-radius: 4px;
   text-decoration: none;
   font-size: 13px;
+}
+
+.progress-track {
+  width: 100%;
+  height: 8px;
+  margin-top: 6px;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: #4a9eff;
+  transition: width 0.2s linear;
 }

@@ -24,6 +24,18 @@ function sanitizeFilenamePart(text: string): string {
   return trimmed.length > 0 ? trimmed.replace(/[\\/:*?"<>|]/g, '') : '';
 }
 
+/** Parses "mm:ss" or a plain seconds number. Returns NaN if empty/unparseable. */
+function parseTimeToSeconds(input: string): number {
+  const trimmed = input.trim();
+  if (!trimmed) return NaN;
+  if (trimmed.includes(':')) {
+    const parts = trimmed.split(':').map((p) => parseFloat(p));
+    if (parts.some((p) => Number.isNaN(p))) return NaN;
+    return parts.reduce((acc, p) => acc * 60 + p, 0);
+  }
+  return parseFloat(trimmed);
+}
+
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 /** Keeps a <input type="color"> and a plain hex <input type="text"> in sync both ways. */
@@ -79,15 +91,28 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
   const visualizerStyleSelect = el<HTMLSelectElement>('visualizerStyle');
   const spectrumMinHzInput = el<HTMLInputElement>('spectrumMinHz');
   const spectrumMaxHzInput = el<HTMLInputElement>('spectrumMaxHz');
+  const renderRangeModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="renderRangeMode"]');
+  const renderRangeRow = el<HTMLElement>('renderRangeRow');
+  const renderStartInput = el<HTMLInputElement>('renderStart');
+  const renderEndInput = el<HTMLInputElement>('renderEnd');
   const playBtn = el<HTMLButtonElement>('playBtn');
   const renderBtn = el<HTMLButtonElement>('renderBtn');
   const statusEl = el<HTMLDivElement>('status');
+  const renderProgressWrap = el<HTMLElement>('renderProgressWrap');
+  const renderProgressFill = el<HTMLElement>('renderProgressFill');
   const downloadLink = el<HTMLAnchorElement>('downloadLink');
 
   const panel = document.querySelector<HTMLElement>('.panel')!;
 
+  let previousBlobUrl: string | null = null;
+
   function setStatus(message: string): void {
     statusEl.textContent = message;
+  }
+
+  function setRenderProgress(message: string, fraction: number): void {
+    statusEl.textContent = `${message} ${Math.round(fraction * 100)}%`;
+    renderProgressFill.style.width = `${Math.round(fraction * 100)}%`;
   }
 
   function resetOnEnded(): void {
@@ -219,6 +244,22 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
     state.spectrumMaxHz = parseFloat(spectrumMaxHzInput.value) || 0;
   });
 
+  renderRangeModeRadios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      state.renderRangeMode = radio.value === 'custom' ? 'custom' : 'full';
+      renderRangeRow.style.display = state.renderRangeMode === 'custom' ? '' : 'none';
+    });
+  });
+  renderStartInput.addEventListener('input', () => {
+    const seconds = parseTimeToSeconds(renderStartInput.value);
+    state.renderStartSec = Number.isNaN(seconds) ? 0 : Math.max(0, seconds);
+  });
+  renderEndInput.addEventListener('input', () => {
+    const seconds = parseTimeToSeconds(renderEndInput.value);
+    state.renderEndSec = Number.isNaN(seconds) ? 0 : Math.max(0, seconds);
+  });
+
   playBtn.addEventListener('click', async () => {
     if (audioElement.paused) {
       await audioEngine.resume();
@@ -244,17 +285,32 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
     state.isRecording = true;
     setControlsDisabled(true);
     downloadLink.style.display = 'none';
+    renderProgressWrap.style.display = 'block';
+    renderProgressFill.style.width = '0%';
     setStatus('Preparing…');
 
-    await startExport(canvas, audioEngine, audioElement, {
-      onProgress: (message) => setStatus(message),
+    const range =
+      state.renderRangeMode === 'custom'
+        ? { startSec: state.renderStartSec, endSec: state.renderEndSec > 0 ? state.renderEndSec : null }
+        : { startSec: 0, endSec: null };
+
+    await startExport(canvas, audioEngine, audioElement, range, {
+      onProgress: (message, fraction) => setRenderProgress(message, fraction),
       onComplete: ({ blobUrl, fileExtension }) => {
+        // A rendered video can be a multi-hundred-MB (or bigger) in-memory
+        // Blob. Without revoking the previous one, re-rendering repeatedly in
+        // the same tab session would pile these up in RAM indefinitely — only
+        // the most recent render's file is ever needed at once.
+        if (previousBlobUrl) URL.revokeObjectURL(previousBlobUrl);
+        previousBlobUrl = blobUrl;
+
         const artistPart = sanitizeFilenamePart(state.artistName);
         const titlePart = sanitizeFilenamePart(state.songTitle);
         const base = [artistPart, titlePart].filter(Boolean).join(' - ') || 'visualizer';
         downloadLink.href = blobUrl;
         downloadLink.download = `${base}.${fileExtension}`;
         downloadLink.style.display = 'inline-block';
+        renderProgressWrap.style.display = 'none';
         setStatus('Done! Download your video below.');
 
         state.isRecording = false;
@@ -265,6 +321,7 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
       },
       onError: (message) => {
         setStatus(message);
+        renderProgressWrap.style.display = 'none';
         state.isRecording = false;
         setControlsDisabled(false);
         resetOnEnded();
