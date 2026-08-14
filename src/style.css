@@ -45,7 +45,8 @@ html, body {
 #stage {
   width: auto;
   height: auto;
-  max-width: 70vw;
+  min-width: 0;
+  max-width: 70%;
   max-height: 100%;
   background: #000;
   border: 1px solid #333;

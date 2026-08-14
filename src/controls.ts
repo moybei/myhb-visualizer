@@ -107,9 +107,12 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
   const previewScaleLabel = el<HTMLElement>('previewScaleLabel');
   function applyPreviewScale(): void {
     const pct = previewScaleInput.value;
-    // Display size only — the canvas's actual pixel buffer (and therefore the
-    // recorded/exported resolution) always stays 1920x1080 regardless of this.
-    canvas.style.maxWidth = `${pct}vw`;
+    // Percent of the canvas's own container (not the viewport) — vw could ask
+    // for more width than the space actually available next to the panel,
+    // which overflowed the layout at higher slider values. % is always
+    // relative to the container's real available size, so it can never
+    // exceed what's actually there.
+    canvas.style.maxWidth = `${pct}%`;
     previewScaleLabel.textContent = `${pct}%`;
   }
   previewScaleInput.addEventListener('input', applyPreviewScale);
