@@ -10,6 +10,7 @@ export class AudioEngine {
   readonly gainNode: GainNode;
   readonly streamDestination: MediaStreamAudioDestinationNode;
   private readonly freqData: Uint8Array<ArrayBuffer>;
+  private readonly timeDomainData: Uint8Array<ArrayBuffer>;
 
   constructor(audioElement: HTMLAudioElement) {
     const AudioContextCtor =
@@ -18,11 +19,14 @@ export class AudioEngine {
 
     this.analyser = this.audioContext.createAnalyser();
     this.analyser.fftSize = 2048;
-    this.analyser.smoothingTimeConstant = 0.8;
+    // Lower smoothing so the spectrum reacts snappily to hits instead of
+    // lagging/averaging them into a flat-looking line.
+    this.analyser.smoothingTimeConstant = 0.35;
 
     this.gainNode = this.audioContext.createGain();
     this.streamDestination = this.audioContext.createMediaStreamDestination();
     this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
+    this.timeDomainData = new Uint8Array(this.analyser.fftSize);
 
     const sourceNode = this.audioContext.createMediaElementSource(audioElement);
     sourceNode.connect(this.analyser);
@@ -42,5 +46,16 @@ export class AudioEngine {
   getFrequencyData(): Uint8Array<ArrayBuffer> {
     this.analyser.getByteFrequencyData(this.freqData);
     return this.freqData;
+  }
+
+  /** Instantaneous peak deviation from silence in the current audio buffer, 0..1. */
+  getTimeDomainPeak(): number {
+    this.analyser.getByteTimeDomainData(this.timeDomainData);
+    let peak = 0;
+    for (let i = 0; i < this.timeDomainData.length; i++) {
+      const deviation = Math.abs(this.timeDomainData[i] - 128);
+      if (deviation > peak) peak = deviation;
+    }
+    return peak / 128;
   }
 }

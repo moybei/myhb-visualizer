@@ -23,16 +23,25 @@ const SPECTRUM_W = STAGE_W - SPECTRUM_X * 2;
 const SPECTRUM_Y = STAGE_H - 220;
 const SPECTRUM_H = 120;
 
-const NUM_SPECTRUM_BARS = 96;
+const PROGRESS_BAR_X = SPECTRUM_X;
+const PROGRESS_BAR_W = SPECTRUM_W;
+const PROGRESS_BAR_Y = SPECTRUM_Y + SPECTRUM_H + 26;
+const PROGRESS_BAR_H = 6;
+
+const NUM_SPECTRUM_BARS = 160;
 
 let bgCacheCanvas: HTMLCanvasElement | null = null;
 let bgCacheKey = '';
 
-/** Draws one full frame of the scene. `freqData` is null before any playback has started. */
+/**
+ * Draws one full frame of the scene. `freqData`/`waveformHistory` are null before
+ * any playback has started. `playedFraction` drives only the bottom progress bar.
+ */
 export function drawScene(
   ctx: CanvasRenderingContext2D,
   state: AppState,
   freqData: Uint8Array | null,
+  waveformHistory: Float32Array | null,
   playedFraction: number
 ): void {
   ctx.clearRect(0, 0, STAGE_W, STAGE_H);
@@ -40,8 +49,9 @@ export function drawScene(
   drawBackground(ctx, state);
   drawAlbumArtBox(ctx, state);
   drawTextStack(ctx, state);
-  drawWaveformField(ctx, state, playedFraction);
+  drawWaveformField(ctx, state, waveformHistory);
   drawSpectrumBar(ctx, state, freqData);
+  drawProgressBar(ctx, state, playedFraction);
 }
 
 function drawBackground(ctx: CanvasRenderingContext2D, state: AppState): void {
@@ -149,15 +159,22 @@ function fillTextClipped(ctx: CanvasRenderingContext2D, text: string, x: number,
   ctx.fillText(s, x, y);
 }
 
-function drawWaveformField(ctx: CanvasRenderingContext2D, state: AppState, playedFraction: number): void {
-  const peaks = state.waveformPeaks;
+/**
+ * Live, scrolling oscilloscope-style waveform (After Effects "audio waveform"
+ * template look): `waveformHistory` is a rolling buffer of per-frame peak
+ * amplitude, oldest sample at index 0 / leftmost pixel, newest sample at the
+ * last index / rightmost pixel. Because the buffer shifts one slot toward
+ * index 0 every frame, a spike from a kick drum enters on the right and
+ * visibly travels left over subsequent frames.
+ */
+function drawWaveformField(ctx: CanvasRenderingContext2D, state: AppState, waveformHistory: Float32Array | null): void {
   const x = TEXT_X;
   const y = WAVEFORM_FIELD_Y;
   const w = TEXT_W;
   const h = WAVEFORM_FIELD_H;
   const centerY = y + h / 2;
 
-  if (!peaks || peaks.min.length === 0) {
+  if (!waveformHistory || waveformHistory.length === 0) {
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -167,25 +184,23 @@ function drawWaveformField(ctx: CanvasRenderingContext2D, state: AppState, playe
     return;
   }
 
-  const columns = peaks.min.length;
-  const barWidth = w / columns;
+  const columns = waveformHistory.length;
+  const colWidth = w / columns;
 
+  ctx.fillStyle = state.textColor;
   for (let i = 0; i < columns; i++) {
-    const amplitude = Math.max(Math.abs(peaks.min[i]), Math.abs(peaks.max[i]));
+    const amplitude = Math.min(1, waveformHistory[i]);
     const barHeight = Math.max(2, amplitude * h);
-    const played = i / columns <= playedFraction;
-    ctx.fillStyle = played ? state.textColor : 'rgba(255,255,255,0.25)';
-    ctx.fillRect(x + i * barWidth, centerY - barHeight / 2, Math.max(1, barWidth - 1), barHeight);
+    ctx.fillRect(x + i * colWidth, centerY - barHeight / 2, Math.max(1, colWidth - 1), barHeight);
   }
-
-  const playheadX = x + w * playedFraction;
-  ctx.strokeStyle = state.visualizerColor;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(playheadX, y - 4);
-  ctx.lineTo(playheadX, y + h + 4);
-  ctx.stroke();
 }
+
+// Music energy concentrates in the bass/low-mid range; averaging all the way up
+// to the near-silent top of the spectrum flattens the visual, so only the
+// lower fraction of bins is sampled. A sub-linear exponent boosts quieter
+// moments so the line keeps moving instead of sitting flat between hits.
+const SPECTRUM_USABLE_BINS_FRACTION = 0.5;
+const SPECTRUM_RESPONSE_EXPONENT = 0.6;
 
 function drawSpectrumBar(ctx: CanvasRenderingContext2D, state: AppState, freqData: Uint8Array | null): void {
   const x = SPECTRUM_X;
@@ -193,7 +208,7 @@ function drawSpectrumBar(ctx: CanvasRenderingContext2D, state: AppState, freqDat
   const w = SPECTRUM_W;
   const h = SPECTRUM_H;
   const barWidth = w / NUM_SPECTRUM_BARS;
-  const gap = Math.min(4, barWidth * 0.2);
+  const gap = Math.min(2, barWidth * 0.2);
 
   ctx.fillStyle = state.visualizerColor;
   ctx.strokeStyle = state.visualizerColor;
@@ -201,18 +216,18 @@ function drawSpectrumBar(ctx: CanvasRenderingContext2D, state: AppState, freqDat
   if (!freqData) {
     // idle state before playback starts: flat baseline
     ctx.globalAlpha = 0.3;
-    ctx.fillRect(x, y + h - 3, w, 3);
+    ctx.fillRect(x, y + h - 2, w, 2);
     ctx.globalAlpha = 1;
     return;
   }
 
-  const usableBins = Math.floor(freqData.length * 0.85);
+  const usableBins = Math.floor(freqData.length * SPECTRUM_USABLE_BINS_FRACTION);
 
   if (state.visualizerStyle === 'line') {
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < NUM_SPECTRUM_BARS; i++) {
-      const value = sampleBand(freqData, i, usableBins) / 255;
+      const value = sampleBand(freqData, i, usableBins);
       const px = x + i * barWidth + barWidth / 2;
       const py = y + h - value * h;
       if (i === 0) ctx.moveTo(px, py);
@@ -223,7 +238,7 @@ function drawSpectrumBar(ctx: CanvasRenderingContext2D, state: AppState, freqDat
   }
 
   for (let i = 0; i < NUM_SPECTRUM_BARS; i++) {
-    const value = sampleBand(freqData, i, usableBins) / 255;
+    const value = sampleBand(freqData, i, usableBins);
     const barHeight = Math.max(2, value * h);
     const bx = x + i * barWidth;
 
@@ -241,7 +256,21 @@ function sampleBand(freqData: Uint8Array, bandIndex: number, usableBins: number)
   const end = Math.max(start + 1, Math.floor(((bandIndex + 1) / NUM_SPECTRUM_BARS) * usableBins));
   let sum = 0;
   for (let i = start; i < end; i++) sum += freqData[i];
-  return sum / (end - start);
+  const raw = sum / (end - start) / 255;
+  return Math.pow(raw, SPECTRUM_RESPONSE_EXPONENT);
+}
+
+function drawProgressBar(ctx: CanvasRenderingContext2D, state: AppState, playedFraction: number): void {
+  const x = PROGRESS_BAR_X;
+  const y = PROGRESS_BAR_Y;
+  const w = PROGRESS_BAR_W;
+  const h = PROGRESS_BAR_H;
+
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.fillRect(x, y, w, h);
+
+  ctx.fillStyle = state.visualizerColor;
+  ctx.fillRect(x, y, w * Math.max(0, Math.min(1, playedFraction)), h);
 }
 
 /** Draws `img` covering the target rect (like CSS background-size: cover). zoom > 1 crops in tighter. */

@@ -1,11 +1,6 @@
 export type BackgroundMode = 'color' | 'image' | 'blurredAlbumArt';
 export type VisualizerStyle = 'bars' | 'mirroredBars' | 'line';
 
-export interface WaveformPeaks {
-  min: Float32Array;
-  max: Float32Array;
-}
-
 export interface AppState {
   albumArtImage: HTMLImageElement | null;
 
@@ -23,8 +18,7 @@ export interface AppState {
   visualizerColor: string;
   visualizerStyle: VisualizerStyle;
 
-  audioBuffer: AudioBuffer | null;
-  waveformPeaks: WaveformPeaks | null;
+  hasAudio: boolean;
 
   isPlaying: boolean;
   isRecording: boolean;
@@ -46,10 +40,9 @@ export function createInitialState(): AppState {
     fontFamily: "'Helvetica Neue', Arial, sans-serif",
 
     visualizerColor: '#ffffff',
-    visualizerStyle: 'bars',
+    visualizerStyle: 'line',
 
-    audioBuffer: null,
-    waveformPeaks: null,
+    hasAudio: false,
 
     isPlaying: false,
     isRecording: false,

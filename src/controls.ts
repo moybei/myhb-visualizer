@@ -1,9 +1,6 @@
 import type { AppState, BackgroundMode, VisualizerStyle } from './state';
 import type { AudioEngine } from './audioEngine';
-import { decodeAudioFile, computePeaks } from './waveform';
 import { startExport } from './exporter';
-
-const WAVEFORM_COLUMNS = 700;
 
 function el<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -75,27 +72,16 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
     playBtn.textContent = 'Play';
   };
 
-  audioFileInput.addEventListener('change', async () => {
+  audioFileInput.addEventListener('change', () => {
     const file = audioFileInput.files?.[0];
     if (!file) return;
 
-    setStatus('Decoding audio…');
-    playBtn.disabled = true;
-    renderBtn.disabled = true;
-
     const objectUrl = URL.createObjectURL(file);
     audioElement.src = objectUrl;
-
-    try {
-      const buffer = await decodeAudioFile(audioEngine.audioContext, file);
-      state.audioBuffer = buffer;
-      state.waveformPeaks = computePeaks(buffer, WAVEFORM_COLUMNS);
-      playBtn.disabled = false;
-      renderBtn.disabled = false;
-      setStatus('Ready.');
-    } catch (err) {
-      setStatus('Could not decode this audio file.');
-    }
+    state.hasAudio = true;
+    playBtn.disabled = false;
+    renderBtn.disabled = false;
+    setStatus('Ready.');
   });
 
   albumArtFileInput.addEventListener('change', async () => {
@@ -166,7 +152,7 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
   }
 
   renderBtn.addEventListener('click', async () => {
-    if (!state.audioBuffer) return;
+    if (!state.hasAudio) return;
 
     state.isRecording = true;
     setControlsDisabled(true);
