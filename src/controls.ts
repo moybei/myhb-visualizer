@@ -61,6 +61,33 @@ function bindSliderReset(input: HTMLInputElement, defaultValue: number, onChange
   });
 }
 
+/**
+ * Wires drag-and-drop onto a single row (not the whole page): dropping a file
+ * syncs it into the input's own file list (so the native picker UI reflects
+ * it too, same as choosing it via the button) and runs the same handler.
+ */
+function bindFileDropzone(dropzone: HTMLLabelElement, input: HTMLInputElement, onFile: (file: File) => void): void {
+  dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('drag-over');
+  });
+  dropzone.addEventListener('dragleave', () => {
+    dropzone.classList.remove('drag-over');
+  });
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('drag-over');
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+
+    onFile(file);
+  });
+}
+
 export interface ControlDeps {
   state: AppState;
   audioEngine: AudioEngine;
@@ -144,10 +171,7 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
     playBtn.textContent = 'Play';
   };
 
-  audioFileInput.addEventListener('change', async () => {
-    const file = audioFileInput.files?.[0];
-    if (!file) return;
-
+  async function handleAudioFile(file: File): Promise<void> {
     const objectUrl = URL.createObjectURL(file);
     audioElement.src = objectUrl;
     state.hasAudio = true;
@@ -176,19 +200,31 @@ export function setupControls({ state, audioEngine, audioElement, canvas }: Cont
     }
 
     setStatus('Ready.');
-  });
+  }
 
-  albumArtFileInput.addEventListener('change', async () => {
-    const file = albumArtFileInput.files?.[0];
-    if (!file) return;
+  audioFileInput.addEventListener('change', () => {
+    const file = audioFileInput.files?.[0];
+    if (file) void handleAudioFile(file);
+  });
+  bindFileDropzone(el<HTMLLabelElement>('audioFileDropzone'), audioFileInput, (file) => void handleAudioFile(file));
+
+  async function handleAlbumArtFile(file: File): Promise<void> {
     state.albumArtImage = await loadImage(file);
+  }
+  albumArtFileInput.addEventListener('change', () => {
+    const file = albumArtFileInput.files?.[0];
+    if (file) void handleAlbumArtFile(file);
   });
+  bindFileDropzone(el<HTMLLabelElement>('albumArtFileDropzone'), albumArtFileInput, (file) => void handleAlbumArtFile(file));
 
-  bgImageFileInput.addEventListener('change', async () => {
-    const file = bgImageFileInput.files?.[0];
-    if (!file) return;
+  async function handleBgImageFile(file: File): Promise<void> {
     state.backgroundImage = await loadImage(file);
+  }
+  bgImageFileInput.addEventListener('change', () => {
+    const file = bgImageFileInput.files?.[0];
+    if (file) void handleBgImageFile(file);
   });
+  bindFileDropzone(el<HTMLLabelElement>('bgImageFileDropzone'), bgImageFileInput, (file) => void handleBgImageFile(file));
 
   bgModeRadios.forEach((radio) => {
     radio.addEventListener('change', () => {

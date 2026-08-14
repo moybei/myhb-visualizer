@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>myhb-visualizer</title>
+  <title>MYHB Visualizer</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+Antique&display=swap" rel="stylesheet" />
@@ -22,14 +22,14 @@
     </div>
 
     <div class="panel">
-      <h1>myhb-visualizer</h1>
+      <h1>MYHB Visualizer</h1>
 
       <section>
         <h2>Media</h2>
-        <label>Audio file
+        <label id="audioFileDropzone" class="dropzone">Audio file (or drag & drop here)
           <input type="file" id="audioFile" accept="audio/*" />
         </label>
-        <label>Album art
+        <label id="albumArtFileDropzone" class="dropzone">Album art (or drag & drop here)
           <input type="file" id="albumArtFile" accept="image/*" />
         </label>
       </section>
@@ -52,7 +52,7 @@
             <input type="text" id="bgColorHex" class="hex-input" value="#000000" maxlength="7" spellcheck="false" />
           </span>
         </label>
-        <label>Background image
+        <label id="bgImageFileDropzone" class="dropzone">Background image (or drag & drop here)
           <input type="file" id="bgImageFile" accept="image/*" />
         </label>
         <label>Zoom (double-click to reset)
