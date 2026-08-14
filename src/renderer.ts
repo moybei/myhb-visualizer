@@ -16,7 +16,7 @@ const TITLE_LABEL_Y = 400;
 const TITLE_VALUE_Y = 455;
 const WAVEFORM_LABEL_Y = 590;
 const WAVEFORM_FIELD_Y = 615;
-const WAVEFORM_FIELD_H = 90;
+const WAVEFORM_FIELD_H = 126; // 90 * 1.4 — 40% taller
 const WAVEFORM_FIELD_W = Math.round(TEXT_W * 0.5); // halved per feedback
 
 const SPECTRUM_X = 80;
@@ -196,7 +196,8 @@ function drawWaveformField(ctx: CanvasRenderingContext2D, state: AppState, wavef
   const colWidth = w / (columns - 1);
 
   ctx.strokeStyle = state.textColor;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 3.5;
+  ctx.lineJoin = 'round';
   ctx.beginPath();
   for (let i = 0; i < columns; i++) {
     const sample = Math.max(-1, Math.min(1, waveformHistory[i]));

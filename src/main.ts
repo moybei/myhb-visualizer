@@ -4,9 +4,8 @@ import { drawScene } from './renderer';
 import { setupControls } from './controls';
 import { LiveWaveformHistory } from './liveWaveform';
 
-// 160 samples at 8 samples/frame = 20 frames of history ≈ 0.33s sweep at 60fps —
-// fast enough that a kick reads as a shockwave passing through, not a slow scroll.
-const WAVEFORM_HISTORY_LENGTH = 160;
+// 240 samples at 8 samples/frame = 30 frames of history = 0.5s sweep at 60fps.
+const WAVEFORM_HISTORY_LENGTH = 240;
 const WAVEFORM_CHUNK_SIZE = 8;
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
