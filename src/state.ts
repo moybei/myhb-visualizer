@@ -40,7 +40,7 @@ export function createInitialState(): AppState {
     fontFamily: "'Helvetica Neue', Arial, sans-serif",
 
     visualizerColor: '#ffffff',
-    visualizerStyle: 'line',
+    visualizerStyle: 'bars',
 
     hasAudio: false,
 

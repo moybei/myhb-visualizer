@@ -10,7 +10,7 @@ export class AudioEngine {
   readonly gainNode: GainNode;
   readonly streamDestination: MediaStreamAudioDestinationNode;
   private readonly freqData: Uint8Array<ArrayBuffer>;
-  private readonly timeDomainData: Uint8Array<ArrayBuffer>;
+  private readonly timeDomainData: Float32Array<ArrayBuffer>;
 
   constructor(audioElement: HTMLAudioElement) {
     const AudioContextCtor =
@@ -26,7 +26,7 @@ export class AudioEngine {
     this.gainNode = this.audioContext.createGain();
     this.streamDestination = this.audioContext.createMediaStreamDestination();
     this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
-    this.timeDomainData = new Uint8Array(this.analyser.fftSize);
+    this.timeDomainData = new Float32Array(this.analyser.fftSize);
 
     const sourceNode = this.audioContext.createMediaElementSource(audioElement);
     sourceNode.connect(this.analyser);
@@ -48,14 +48,12 @@ export class AudioEngine {
     return this.freqData;
   }
 
-  /** Instantaneous peak deviation from silence in the current audio buffer, 0..1. */
-  getTimeDomainPeak(): number {
-    this.analyser.getByteTimeDomainData(this.timeDomainData);
-    let peak = 0;
-    for (let i = 0; i < this.timeDomainData.length; i++) {
-      const deviation = Math.abs(this.timeDomainData[i] - 128);
-      if (deviation > peak) peak = deviation;
-    }
-    return peak / 128;
+  /**
+   * Raw current waveform snapshot (~fftSize samples spanning a few tens of ms,
+   * range -1..1). Returns a reused Float32Array — read it before the next call.
+   */
+  getTimeDomainSnapshot(): Float32Array<ArrayBuffer> {
+    this.analyser.getFloatTimeDomainData(this.timeDomainData);
+    return this.timeDomainData;
   }
 }

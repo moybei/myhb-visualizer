@@ -4,7 +4,10 @@ import { drawScene } from './renderer';
 import { setupControls } from './controls';
 import { LiveWaveformHistory } from './liveWaveform';
 
-const WAVEFORM_HISTORY_LENGTH = 360;
+// 160 samples at 8 samples/frame = 20 frames of history ≈ 0.33s sweep at 60fps —
+// fast enough that a kick reads as a shockwave passing through, not a slow scroll.
+const WAVEFORM_HISTORY_LENGTH = 160;
+const WAVEFORM_CHUNK_SIZE = 8;
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d');
@@ -16,7 +19,7 @@ if (!ctx) {
 
 const state = createInitialState();
 const audioEngine = new AudioEngine(audioElement);
-const waveformHistory = new LiveWaveformHistory(WAVEFORM_HISTORY_LENGTH);
+const waveformHistory = new LiveWaveformHistory(WAVEFORM_HISTORY_LENGTH, WAVEFORM_CHUNK_SIZE);
 
 setupControls({ state, audioEngine, audioElement, canvas });
 
@@ -25,12 +28,16 @@ setupControls({ state, audioEngine, audioElement, canvas });
 // "renderOnce" code path needed.
 function loop(): void {
   const freqData = state.isPlaying ? audioEngine.getFrequencyData() : null;
-  waveformHistory.push(state.isPlaying ? audioEngine.getTimeDomainPeak() : 0);
+  if (state.isPlaying) {
+    waveformHistory.pushFromRaw(audioEngine.getTimeDomainSnapshot());
+  } else {
+    waveformHistory.pushSilence();
+  }
 
   const duration = audioElement.duration;
   const playedFraction = duration && Number.isFinite(duration) && duration > 0 ? audioElement.currentTime / duration : 0;
 
-  drawScene(ctx!, state, freqData, waveformHistory.data, playedFraction);
+  drawScene(ctx!, state, freqData, waveformHistory.data, playedFraction, audioEngine.audioContext.sampleRate);
 
   requestAnimationFrame(loop);
 }

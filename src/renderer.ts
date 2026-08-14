@@ -17,6 +17,7 @@ const TITLE_VALUE_Y = 455;
 const WAVEFORM_LABEL_Y = 590;
 const WAVEFORM_FIELD_Y = 615;
 const WAVEFORM_FIELD_H = 90;
+const WAVEFORM_FIELD_W = Math.round(TEXT_W * 0.5); // halved per feedback
 
 const SPECTRUM_X = 80;
 const SPECTRUM_W = STAGE_W - SPECTRUM_X * 2;
@@ -28,7 +29,10 @@ const PROGRESS_BAR_W = SPECTRUM_W;
 const PROGRESS_BAR_Y = SPECTRUM_Y + SPECTRUM_H + 26;
 const PROGRESS_BAR_H = 6;
 
-const NUM_SPECTRUM_BARS = 160;
+// Lots of thin bars, like the reference screenshot's dense spectrum look.
+const NUM_SPECTRUM_BARS = 300;
+const SPECTRUM_FREQ_MIN_HZ = 40;
+const SPECTRUM_FREQ_MAX_HZ = 6000;
 
 let bgCacheCanvas: HTMLCanvasElement | null = null;
 let bgCacheKey = '';
@@ -36,13 +40,16 @@ let bgCacheKey = '';
 /**
  * Draws one full frame of the scene. `freqData`/`waveformHistory` are null before
  * any playback has started. `playedFraction` drives only the bottom progress bar.
+ * `sampleRate` is the AudioContext's sample rate, needed to map the spectrum's
+ * frequency band (Hz) to analyser bin indices.
  */
 export function drawScene(
   ctx: CanvasRenderingContext2D,
   state: AppState,
   freqData: Uint8Array | null,
   waveformHistory: Float32Array | null,
-  playedFraction: number
+  playedFraction: number,
+  sampleRate: number
 ): void {
   ctx.clearRect(0, 0, STAGE_W, STAGE_H);
 
@@ -50,7 +57,7 @@ export function drawScene(
   drawAlbumArtBox(ctx, state);
   drawTextStack(ctx, state);
   drawWaveformField(ctx, state, waveformHistory);
-  drawSpectrumBar(ctx, state, freqData);
+  drawSpectrumBar(ctx, state, freqData, sampleRate);
   drawProgressBar(ctx, state, playedFraction);
 }
 
@@ -161,16 +168,17 @@ function fillTextClipped(ctx: CanvasRenderingContext2D, text: string, x: number,
 
 /**
  * Live, scrolling oscilloscope-style waveform (After Effects "audio waveform"
- * template look): `waveformHistory` is a rolling buffer of per-frame peak
- * amplitude, oldest sample at index 0 / leftmost pixel, newest sample at the
- * last index / rightmost pixel. Because the buffer shifts one slot toward
- * index 0 every frame, a spike from a kick drum enters on the right and
- * visibly travels left over subsequent frames.
+ * template look): `waveformHistory` holds actual raw sample values (-1..1),
+ * oldest at index 0 / leftmost pixel, newest at the last index / rightmost
+ * pixel, drawn as one continuous stroked curve (real oscillation, not
+ * amplitude bars). The buffer represents a very short real-time window (a
+ * fraction of a second), so a kick's transient sweeps across the whole field
+ * almost instantly rather than crawling across over several seconds.
  */
 function drawWaveformField(ctx: CanvasRenderingContext2D, state: AppState, waveformHistory: Float32Array | null): void {
   const x = TEXT_X;
   const y = WAVEFORM_FIELD_Y;
-  const w = TEXT_W;
+  const w = WAVEFORM_FIELD_W;
   const h = WAVEFORM_FIELD_H;
   const centerY = y + h / 2;
 
@@ -185,30 +193,32 @@ function drawWaveformField(ctx: CanvasRenderingContext2D, state: AppState, wavef
   }
 
   const columns = waveformHistory.length;
-  const colWidth = w / columns;
+  const colWidth = w / (columns - 1);
 
-  ctx.fillStyle = state.textColor;
+  ctx.strokeStyle = state.textColor;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
   for (let i = 0; i < columns; i++) {
-    const amplitude = Math.min(1, waveformHistory[i]);
-    const barHeight = Math.max(2, amplitude * h);
-    ctx.fillRect(x + i * colWidth, centerY - barHeight / 2, Math.max(1, colWidth - 1), barHeight);
+    const sample = Math.max(-1, Math.min(1, waveformHistory[i]));
+    const px = x + i * colWidth;
+    const py = centerY - sample * (h / 2);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
   }
+  ctx.stroke();
 }
 
-// Music energy concentrates in the bass/low-mid range; averaging all the way up
-// to the near-silent top of the spectrum flattens the visual, so only the
-// lower fraction of bins is sampled. A sub-linear exponent boosts quieter
-// moments so the line keeps moving instead of sitting flat between hits.
-const SPECTRUM_USABLE_BINS_FRACTION = 0.5;
+// A sub-linear exponent boosts quieter moments so bars keep moving instead of
+// sitting flat between hits.
 const SPECTRUM_RESPONSE_EXPONENT = 0.6;
 
-function drawSpectrumBar(ctx: CanvasRenderingContext2D, state: AppState, freqData: Uint8Array | null): void {
+function drawSpectrumBar(ctx: CanvasRenderingContext2D, state: AppState, freqData: Uint8Array | null, sampleRate: number): void {
   const x = SPECTRUM_X;
   const y = SPECTRUM_Y;
   const w = SPECTRUM_W;
   const h = SPECTRUM_H;
   const barWidth = w / NUM_SPECTRUM_BARS;
-  const gap = Math.min(2, barWidth * 0.2);
+  const gap = Math.min(1.5, barWidth * 0.25);
 
   ctx.fillStyle = state.visualizerColor;
   ctx.strokeStyle = state.visualizerColor;
@@ -221,13 +231,17 @@ function drawSpectrumBar(ctx: CanvasRenderingContext2D, state: AppState, freqDat
     return;
   }
 
-  const usableBins = Math.floor(freqData.length * SPECTRUM_USABLE_BINS_FRACTION);
+  // Map the requested Hz band onto analyser bin indices using the real sample
+  // rate: bin i covers i * (sampleRate / 2) / freqData.length Hz.
+  const nyquist = sampleRate / 2;
+  const startBin = Math.max(0, Math.floor((SPECTRUM_FREQ_MIN_HZ / nyquist) * freqData.length));
+  const endBin = Math.min(freqData.length, Math.ceil((SPECTRUM_FREQ_MAX_HZ / nyquist) * freqData.length));
 
   if (state.visualizerStyle === 'line') {
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < NUM_SPECTRUM_BARS; i++) {
-      const value = sampleBand(freqData, i, usableBins);
+      const value = sampleBand(freqData, i, startBin, endBin);
       const px = x + i * barWidth + barWidth / 2;
       const py = y + h - value * h;
       if (i === 0) ctx.moveTo(px, py);
@@ -238,7 +252,7 @@ function drawSpectrumBar(ctx: CanvasRenderingContext2D, state: AppState, freqDat
   }
 
   for (let i = 0; i < NUM_SPECTRUM_BARS; i++) {
-    const value = sampleBand(freqData, i, usableBins);
+    const value = sampleBand(freqData, i, startBin, endBin);
     const barHeight = Math.max(2, value * h);
     const bx = x + i * barWidth;
 
@@ -251,9 +265,10 @@ function drawSpectrumBar(ctx: CanvasRenderingContext2D, state: AppState, freqDat
   }
 }
 
-function sampleBand(freqData: Uint8Array, bandIndex: number, usableBins: number): number {
-  const start = Math.floor((bandIndex / NUM_SPECTRUM_BARS) * usableBins);
-  const end = Math.max(start + 1, Math.floor(((bandIndex + 1) / NUM_SPECTRUM_BARS) * usableBins));
+function sampleBand(freqData: Uint8Array, bandIndex: number, startBin: number, endBin: number): number {
+  const bandBins = endBin - startBin;
+  const start = startBin + Math.floor((bandIndex / NUM_SPECTRUM_BARS) * bandBins);
+  const end = Math.max(start + 1, startBin + Math.floor(((bandIndex + 1) / NUM_SPECTRUM_BARS) * bandBins));
   let sum = 0;
   for (let i = start; i < end; i++) sum += freqData[i];
   const raw = sum / (end - start) / 255;
